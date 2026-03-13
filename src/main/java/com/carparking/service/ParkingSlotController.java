@@ -1,0 +1,91 @@
+package com.carparking.service;
+
+import com.carparking.model.ParkingSlot;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+@RestController
+@RequestMapping("/api/slots")
+public class ParkingSlotController {
+
+    private final SlotRepository slotRepository;
+
+    public ParkingSlotController(SlotRepository slotRepository) {
+        this.slotRepository = slotRepository;
+    }
+
+    // GET /api/slots — all slots (admin + fallback)
+    @GetMapping
+    public ResponseEntity<List<ParkingSlot>> getAllSlots() {
+        return ResponseEntity.ok(slotRepository.findAll());
+    }
+
+    // GET /api/slots/nearby?lat=-1.29&lon=36.82&radius=5
+    @GetMapping("/nearby")
+    public ResponseEntity<List<Map<String, Object>>> getNearby(
+            @RequestParam double lat,
+            @RequestParam double lon,
+            @RequestParam(defaultValue = "5") double radius) {
+
+        List<Map<String, Object>> result = slotRepository.findAll().stream()
+                .filter(s -> s.getLatitude() != 0.0 && s.getLongitude() != 0.0)
+                .map(s -> {
+                    double dist = haversine(lat, lon, s.getLatitude(), s.getLongitude());
+                    Map<String, Object> m = new LinkedHashMap<>();
+                    m.put("slotId",          s.getSlotId());
+                    m.put("parkingAreaName", s.getParkingAreaName());
+                    m.put("status",          s.getStatus());
+                    m.put("floor",           s.getFloor());
+                    m.put("latitude",        s.getLatitude());
+                    m.put("longitude",       s.getLongitude());
+                    m.put("distanceKm",      Math.round(dist * 100.0) / 100.0);
+                    return m;
+                })
+                .filter(m -> (double) m.get("distanceKm") <= radius)
+                .sorted(Comparator.comparingDouble(m -> (double) m.get("distanceKm")))
+                .collect(Collectors.toList());
+
+        return ResponseEntity.ok(result);
+    }
+
+    // GET /api/slots/summary
+    @GetMapping("/summary")
+    public ResponseEntity<Map<String, Long>> getSummary() {
+        return ResponseEntity.ok(
+                slotRepository.findAll().stream()
+                        .collect(Collectors.groupingBy(
+                                s -> s.getStatus().name(),
+                                Collectors.counting()
+                        ))
+        );
+    }
+
+    // PUT /api/slots/{slotId}/free
+    @PutMapping("/{slotId}/free")
+    public ResponseEntity<?> freeSlot(@PathVariable String slotId) {
+        return slotRepository.findById(slotId).map(slot -> {
+            slot.setStatus(com.carparking.model.SlotStatus.FREE);
+            slot.setReservedByDriverId(null);
+            slot.setReservationExpiresAt(null);
+            slotRepository.save(slot);
+            return ResponseEntity.ok(Map.of("message", "Slot freed", "slotId", slotId));
+        }).orElse(ResponseEntity.notFound().build());
+    }
+
+    // ── Haversine ────────────────────────────────────────────────────────
+    private double haversine(double lat1, double lon1, double lat2, double lon2) {
+        final double R = 6371;
+        double dLat = Math.toRadians(lat2 - lat1);
+        double dLon = Math.toRadians(lon2 - lon1);
+        double a = Math.sin(dLat/2) * Math.sin(dLat/2)
+                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
+                * Math.sin(dLon/2) * Math.sin(dLon/2);
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+}

@@ -1,0 +1,19 @@
+-- V6__mpesa_payments.sql
+-- Adds M-Pesa payment columns and payment_status to bookings
+
+-- 1. Update payments table with M-Pesa fields
+ALTER TABLE payments
+    ADD COLUMN IF NOT EXISTS checkout_request_id  VARCHAR(100) UNIQUE,
+    ADD COLUMN IF NOT EXISTS mpesa_receipt_number VARCHAR(50),
+    ADD COLUMN IF NOT EXISTS phone                VARCHAR(20),
+    ADD COLUMN IF NOT EXISTS status               VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+    ADD COLUMN IF NOT EXISTS failure_reason       VARCHAR(255),
+    ADD COLUMN IF NOT EXISTS completed_at         DATETIME;
+
+-- 2. Add payment_status to bookings
+ALTER TABLE bookings
+    ADD COLUMN IF NOT EXISTS payment_status VARCHAR(20) DEFAULT 'UNPAID';
+
+-- 3. Index for fast checkout ID lookup
+CREATE INDEX IF NOT EXISTS idx_payments_checkout
+    ON payments(checkout_request_id);
