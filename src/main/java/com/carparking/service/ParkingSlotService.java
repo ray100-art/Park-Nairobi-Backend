@@ -28,8 +28,11 @@ public class ParkingSlotService {
     // ── Register ──────────────────────────────────────────
     public ParkingSlot registerSlot(ParkingSlot slot) {
         slot.setStatus(SlotStatus.FREE);
-        if (slotRegistry.putIfAbsent(slot.getSlotId(), slot) != null)
-            throw new IllegalArgumentException("Slot already registered: " + slot.getSlotId());
+        ParkingSlot existing = slotRegistry.putIfAbsent(slot.getSlotId(), slot);
+        if (existing != null) {
+            log.info("Slot already registered, skipping: " + slot.getSlotId());
+            return existing;
+        }
         slotLocks.putIfAbsent(slot.getSlotId(), new ReentrantLock());
         log.info("Slot registered: " + slot.getSlotId());
         return slot;

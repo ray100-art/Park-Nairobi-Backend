@@ -1,0 +1,2 @@
+ALTER TABLE bookings
+    ADD COLUMN payment_status VARCHAR(20) NOT NULL DEFAULT 'UNPAID';

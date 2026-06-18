@@ -1,5 +1,6 @@
 package com.carparking.service;
 
+import com.carparking.algorithm.HaversineUtil;
 import com.carparking.model.ParkingSlot;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -9,6 +10,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+
 
 @RestController
 @RequestMapping("/api/slots")
@@ -36,7 +38,7 @@ public class ParkingSlotController {
         List<Map<String, Object>> result = slotRepository.findAll().stream()
                 .filter(s -> s.getLatitude() != 0.0 && s.getLongitude() != 0.0)
                 .map(s -> {
-                    double dist = haversine(lat, lon, s.getLatitude(), s.getLongitude());
+                    double dist = HaversineUtil.distanceKm(lat, lon, s.getLatitude(), s.getLongitude());
                     Map<String, Object> m = new LinkedHashMap<>();
                     m.put("slotId",          s.getSlotId());
                     m.put("parkingAreaName", s.getParkingAreaName());
@@ -78,14 +80,4 @@ public class ParkingSlotController {
         }).orElse(ResponseEntity.notFound().build());
     }
 
-    // ── Haversine ────────────────────────────────────────────────────────
-    private double haversine(double lat1, double lon1, double lat2, double lon2) {
-        final double R = 6371;
-        double dLat = Math.toRadians(lat2 - lat1);
-        double dLon = Math.toRadians(lon2 - lon1);
-        double a = Math.sin(dLat/2) * Math.sin(dLat/2)
-                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
-                * Math.sin(dLon/2) * Math.sin(dLon/2);
-        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    }
 }
