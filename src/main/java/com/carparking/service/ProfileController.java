@@ -3,7 +3,6 @@ package com.carparking.service;
 import com.carparking.model.User;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
@@ -26,12 +25,12 @@ public class ProfileController {
     // ── GET /api/profile ──────────────────────────────────────────────────
     @GetMapping
     public ResponseEntity<?> getProfile(
-            @AuthenticationPrincipal UserDetails userDetails) {
+            @AuthenticationPrincipal String email) {
 
-        if (userDetails == null)
+        if (email == null)
             return ResponseEntity.status(401).body(Map.of("message", "Unauthorised"));
 
-        Optional<User> opt = userRepository.findByEmail(userDetails.getUsername());
+        Optional<User> opt = userRepository.findByEmail(email);
         if (opt.isEmpty())
             return ResponseEntity.status(404).body(Map.of("message", "User not found"));
 
@@ -48,36 +47,24 @@ public class ProfileController {
     // ── PUT /api/profile ──────────────────────────────────────────────────
     @PutMapping
     public ResponseEntity<?> updateProfile(
-            @AuthenticationPrincipal UserDetails userDetails,
+            @AuthenticationPrincipal String email,
             @RequestBody Map<String, String> req) {
 
-        if (userDetails == null)
+        if (email == null)
             return ResponseEntity.status(401).body(Map.of("message", "Unauthorised"));
 
-        Optional<User> opt = userRepository.findByEmail(userDetails.getUsername());
+        Optional<User> opt = userRepository.findByEmail(email);
         if (opt.isEmpty())
             return ResponseEntity.status(404).body(Map.of("message", "User not found"));
 
         User   user  = opt.get();
         String name  = req.getOrDefault("fullName", "").trim();
-        String email = req.getOrDefault("email",    "").trim().toLowerCase();
         String phone = req.getOrDefault("phone",    "").trim();
 
         if (name.isBlank())
             return ResponseEntity.badRequest().body(Map.of("message", "Full name is required"));
-        if (email.isBlank())
-            return ResponseEntity.badRequest().body(Map.of("message", "Email is required"));
-
-        // If email changed, make sure it's not taken by another account
-        if (!email.equalsIgnoreCase(user.getEmail())) {
-            Optional<User> existing = userRepository.findByEmail(email);
-            if (existing.isPresent() && !existing.get().getId().equals(user.getId()))
-                return ResponseEntity.badRequest()
-                        .body(Map.of("message", "Email already in use by another account"));
-        }
 
         user.setFullName(name);
-        user.setEmail(email);
         if (!phone.isBlank()) user.setPhone(phone);
         userRepository.save(user);
 
@@ -95,10 +82,10 @@ public class ProfileController {
     // ── PUT /api/profile/password ─────────────────────────────────────────
     @PutMapping("/password")
     public ResponseEntity<?> changePassword(
-            @AuthenticationPrincipal UserDetails userDetails,
+            @AuthenticationPrincipal String email,
             @RequestBody Map<String, String> req) {
 
-        if (userDetails == null)
+        if (email == null)
             return ResponseEntity.status(401).body(Map.of("message", "Unauthorised"));
 
         String currentPassword = req.getOrDefault("currentPassword", "");
@@ -114,7 +101,7 @@ public class ProfileController {
             return ResponseEntity.badRequest()
                     .body(Map.of("message", "New password must contain at least one number"));
 
-        Optional<User> opt = userRepository.findByEmail(userDetails.getUsername());
+        Optional<User> opt = userRepository.findByEmail(email);
         if (opt.isEmpty())
             return ResponseEntity.status(404).body(Map.of("message", "User not found"));
 
