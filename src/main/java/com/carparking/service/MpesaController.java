@@ -47,14 +47,4 @@ public class MpesaController {
         return ResponseEntity.ok(mpesaService.queryStatus(checkoutId));
     }
 
-    // GET /api/mpesa/token — dev only, test credentials
-    @GetMapping("/token")
-    public ResponseEntity<Map<String, String>> testToken() {
-        try {
-            String token = mpesaService.getAccessToken();
-            return ResponseEntity.ok(Map.of("token", token, "status", "OK"));
-        } catch (Exception e) {
-            return ResponseEntity.ok(Map.of("error", e.getMessage(), "status", "FAILED"));
-        }
-    }
 }

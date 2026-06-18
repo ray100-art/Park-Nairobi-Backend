@@ -12,9 +12,12 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.logging.Logger;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    private static final Logger log = Logger.getLogger(GlobalExceptionHandler.class.getName());
 
     // Validation errors (@Valid failures)
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -74,6 +77,7 @@ public class GlobalExceptionHandler {
     // Catch-all — hides stack traces from the client
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, Object>> handleGeneral(Exception ex) {
+        log.severe("Unhandled exception [" + ex.getClass().getSimpleName() + "]: " + ex.getMessage());
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(
                 "success",   false,
                 "status",    500,

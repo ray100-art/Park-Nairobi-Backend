@@ -3,7 +3,9 @@ package com.carparking.service;
 import com.carparking.model.Booking;
 import com.carparking.model.ParkingSlot;
 import com.carparking.model.SlotStatus;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -17,21 +19,25 @@ public class BookingService {
     private static final Logger log =
             Logger.getLogger(BookingService.class.getName());
 
-    private final BookingRepository bookingRepository;
-    private final SlotRepository    slotRepository;
-    private final UserRepository    userRepository;
-    private final SlotBroadcaster   slotBroadcaster;
+    private final BookingRepository  bookingRepository;
+    private final SlotRepository     slotRepository;
+    private final UserRepository     userRepository;
+    private final SlotBroadcaster    slotBroadcaster;
+    private final ParkingSlotService parkingSlotService;
 
     public BookingService(BookingRepository bookingRepository,
                           SlotRepository slotRepository,
                           UserRepository userRepository,
-                          SlotBroadcaster slotBroadcaster) {
-        this.bookingRepository = bookingRepository;
-        this.slotRepository    = slotRepository;
-        this.userRepository    = userRepository;
-        this.slotBroadcaster   = slotBroadcaster;
+                          SlotBroadcaster slotBroadcaster,
+                          @Lazy ParkingSlotService parkingSlotService) {
+        this.bookingRepository  = bookingRepository;
+        this.slotRepository     = slotRepository;
+        this.userRepository     = userRepository;
+        this.slotBroadcaster    = slotBroadcaster;
+        this.parkingSlotService = parkingSlotService;
     }
 
+    @Transactional
     public Map<String, Object> createBooking(Long userId, String slotId,
                                              String vehiclePlate) {
         Map<String, Object> response = new HashMap<>();
@@ -48,20 +54,23 @@ public class BookingService {
                 return response;
             }
 
-            // Reserve the slot
+            // Reserve the slot in DB
             slot.setStatus(SlotStatus.RESERVED);
             slot.setReservedByDriverId(String.valueOf(userId));
             slot.setReservationExpiresAt(LocalDateTime.now().plusMinutes(15));
             slotRepository.save(slot);
 
-            // 📡 Broadcast live update
-            slotBroadcaster.broadcastSlotUpdate(slot);
+            // Keep in-memory map in sync
+            parkingSlotService.syncSlot(slot);
 
-            // Create booking
+            // Create booking record
             Booking booking = new Booking(userId, slotId,
                     slot.getParkingAreaId(), vehiclePlate,
                     LocalDateTime.now().plusMinutes(15));
             bookingRepository.save(booking);
+
+            // Broadcast live update
+            slotBroadcaster.broadcastSlotUpdate(slot);
 
             log.info("Booking created: user=" + userId + " slot=" + slotId);
 

@@ -3,24 +3,34 @@ package com.carparking.service;
 import com.carparking.model.ParkingSlot;
 import com.carparking.model.SensorEvent;
 import com.carparking.model.SlotStatus;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.Optional;
 
 @Service
 public class SensorService {
 
-    private final SlotRepository  slotRepository;
-    private final SlotBroadcaster slotBroadcaster;
+    private final SlotRepository     slotRepository;
+    private final SlotBroadcaster    slotBroadcaster;
+    private final BookingRepository  bookingRepository;
+    private final ParkingSlotService parkingSlotService;
 
     public SensorService(SlotRepository slotRepository,
-                         SlotBroadcaster slotBroadcaster) {
-        this.slotRepository  = slotRepository;
-        this.slotBroadcaster = slotBroadcaster;
+                         SlotBroadcaster slotBroadcaster,
+                         BookingRepository bookingRepository,
+                         @Lazy ParkingSlotService parkingSlotService) {
+        this.slotRepository     = slotRepository;
+        this.slotBroadcaster    = slotBroadcaster;
+        this.bookingRepository  = bookingRepository;
+        this.parkingSlotService = parkingSlotService;
     }
 
-    // Car entered the bay → OCCUPIED
+    // Car entered the bay → OCCUPIED, activate pending booking
+    @Transactional
     public Map<String, Object> handleEntry(SensorEvent event) {
         Optional<ParkingSlot> opt = slotRepository.findById(event.getSlotId());
         if (opt.isEmpty()) {
@@ -36,6 +46,18 @@ public class SensorService {
 
         slot.setStatus(SlotStatus.OCCUPIED);
         slotRepository.save(slot);
+        parkingSlotService.syncSlot(slot);
+
+        // Activate the most recent pending booking for this slot
+        bookingRepository.findBySlotId(slot.getSlotId()).stream()
+                .filter(b -> "PENDING".equals(b.getStatus()))
+                .max(java.util.Comparator.comparing(b -> b.getReservedAt()))
+                .ifPresent(b -> {
+                    b.setStatus("ACTIVE");
+                    b.setCheckInTime(LocalDateTime.now());
+                    bookingRepository.save(b);
+                });
+
         slotBroadcaster.broadcastSlotUpdate(slot);
 
         return Map.of(
@@ -47,6 +69,7 @@ public class SensorService {
     }
 
     // Car exited the bay → FREE
+    @Transactional
     public Map<String, Object> handleExit(SensorEvent event) {
         Optional<ParkingSlot> opt = slotRepository.findById(event.getSlotId());
         if (opt.isEmpty()) {
@@ -59,6 +82,7 @@ public class SensorService {
         slot.setReservedByDriverId(null);
         slot.setReservationExpiresAt(null);
         slotRepository.save(slot);
+        parkingSlotService.syncSlot(slot);
         slotBroadcaster.broadcastSlotUpdate(slot);
 
         return Map.of(

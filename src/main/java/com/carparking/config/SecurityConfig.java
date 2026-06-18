@@ -63,7 +63,19 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOriginPatterns(List.of("*"));
+
+        String envOrigins = System.getenv("CORS_ALLOWED_ORIGINS");
+        List<String> origins = (envOrigins != null && !envOrigins.isBlank())
+                ? Arrays.asList(envOrigins.split(","))
+                : Arrays.asList(
+                    "http://localhost:3000",
+                    "http://localhost:5500",
+                    "http://127.0.0.1:5500",
+                    "http://localhost:8080",
+                    "null"          // file:// origin used when opening HTML files directly
+                  );
+
+        config.setAllowedOrigins(origins);
         config.setAllowedMethods(Arrays.asList(
                 "GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH", "HEAD"));
         config.setAllowedHeaders(List.of("*"));
