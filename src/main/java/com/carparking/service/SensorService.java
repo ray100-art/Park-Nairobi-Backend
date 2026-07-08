@@ -44,6 +44,11 @@ public class SensorService {
                     "Slot is already OCCUPIED");
         }
 
+        if (slot.getStatus() == SlotStatus.RESERVED) {
+            return Map.of("success", false, "message",
+                    "Slot is reserved — awaiting driver arrival");
+        }
+
         slot.setStatus(SlotStatus.OCCUPIED);
         slotRepository.save(slot);
         parkingSlotService.syncSlot(slot);

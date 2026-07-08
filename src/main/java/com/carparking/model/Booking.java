@@ -51,6 +51,9 @@ public class Booking {
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
+    @Transient
+    private String parkingAreaName;
+
     // ── Auto timestamps ────────────────────────────
     @PrePersist
     public void prePersist() {
@@ -94,6 +97,7 @@ public class Booking {
     public LocalDateTime getReservedAt()       { return reservedAt; }
     public LocalDateTime getExpiresAt()        { return expiresAt; }
     public BigDecimal getTotalAmount()         { return totalAmount; }
+    public String getParkingAreaName()         { return parkingAreaName; }
     public LocalDateTime getCreatedAt()        { return createdAt; }
     public LocalDateTime getUpdatedAt()        { return updatedAt; }
 
@@ -110,6 +114,7 @@ public class Booking {
     public void setReservedAt(LocalDateTime reservedAt)      { this.reservedAt = reservedAt; }
     public void setExpiresAt(LocalDateTime expiresAt)        { this.expiresAt = expiresAt; }
     public void setTotalAmount(BigDecimal totalAmount)       { this.totalAmount = totalAmount; }
+    public void setParkingAreaName(String parkingAreaName)   { this.parkingAreaName = parkingAreaName; }
     public void setCreatedAt(LocalDateTime createdAt)        { this.createdAt = createdAt; }
     public void setUpdatedAt(LocalDateTime updatedAt)        { this.updatedAt = updatedAt; }
 }

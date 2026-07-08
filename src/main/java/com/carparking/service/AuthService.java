@@ -30,19 +30,18 @@ public class AuthService {
     // ── Register ────────────────────────────────
     public Map<String, Object> register(RegisterRequest req) {
         if (userRepository.findByEmail(req.getEmail()).isPresent()) {
-            throw new IllegalArgumentException(
-                    "Email already registered: " + req.getEmail());
+            throw new IllegalArgumentException("Unable to register with these details");
         }
         User user = new User();
         user.setFullName(req.getFullName());
         user.setEmail(req.getEmail());
         user.setPhone(req.getPhone());
         user.setPasswordHash(passwordEncoder.encode(req.getPassword()));
-        user.setRole(req.getRole() != null ? req.getRole() : "DRIVER");
+        user.setRole("DRIVER");
         user.setActive(true);
         userRepository.save(user);
 
-        String token = jwtService.generateToken(user.getEmail(), user.getRole());
+        String token = jwtService.generateToken(user);
         return Map.of(
                 "success", true,
                 "message", "Registration successful",
@@ -64,7 +63,7 @@ public class AuthService {
         if (!user.isActive()) {
             throw new IllegalArgumentException("Account is deactivated");
         }
-        String token = jwtService.generateToken(user.getEmail(), user.getRole());
+        String token = jwtService.generateToken(user);
         return Map.of(
                 "success", true,
                 "message", "Login successful",
@@ -103,18 +102,14 @@ public class AuthService {
                 message = "Password must contain at least one number")
         private String password;
 
-        private String role;
-
         public String getFullName()            { return fullName; }
         public String getEmail()               { return email; }
         public String getPhone()               { return phone; }
         public String getPassword()            { return password; }
-        public String getRole()                { return role; }
         public void setFullName(String v)      { this.fullName = v; }
         public void setEmail(String v)         { this.email = v; }
         public void setPhone(String v)         { this.phone = v; }
         public void setPassword(String v)      { this.password = v; }
-        public void setRole(String v)          { this.role = v; }
     }
 
     public static class LoginRequest {

@@ -3,6 +3,7 @@ package com.carparking.service;
 import com.carparking.algorithm.HaversineUtil;
 import com.carparking.model.ParkingSlot;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Comparator;
@@ -16,10 +17,16 @@ import java.util.stream.Collectors;
 @RequestMapping("/api/slots")
 public class ParkingSlotController {
 
-    private final SlotRepository slotRepository;
+    private final SlotRepository     slotRepository;
+    private final ParkingSlotService parkingSlotService;
+    private final SlotBroadcaster    slotBroadcaster;
 
-    public ParkingSlotController(SlotRepository slotRepository) {
-        this.slotRepository = slotRepository;
+    public ParkingSlotController(SlotRepository slotRepository,
+                                 ParkingSlotService parkingSlotService,
+                                 SlotBroadcaster slotBroadcaster) {
+        this.slotRepository     = slotRepository;
+        this.parkingSlotService = parkingSlotService;
+        this.slotBroadcaster    = slotBroadcaster;
     }
 
     // GET /api/slots — all slots (admin + fallback)
@@ -70,12 +77,15 @@ public class ParkingSlotController {
 
     // PUT /api/slots/{slotId}/free
     @PutMapping("/{slotId}/free")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<?> freeSlot(@PathVariable String slotId) {
         return slotRepository.findById(slotId).map(slot -> {
             slot.setStatus(com.carparking.model.SlotStatus.FREE);
             slot.setReservedByDriverId(null);
             slot.setReservationExpiresAt(null);
             slotRepository.save(slot);
+            parkingSlotService.syncSlot(slot);
+            slotBroadcaster.broadcastSlotUpdate(slot);
             return ResponseEntity.ok(Map.of("message", "Slot freed", "slotId", slotId));
         }).orElse(ResponseEntity.notFound().build());
     }

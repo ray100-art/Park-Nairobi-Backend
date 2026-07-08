@@ -10,14 +10,13 @@ import static org.assertj.core.api.Assertions.within;
  */
 class HaversineUtilTest {
 
-    /** Known distance: Nairobi CBD to Westlands ≈ 3.4 km */
+    /** Known distance: Nairobi CBD to Westlands ≈ 2.3 km */
     @Test
     void distance_NairobiCBD_to_Westlands() {
         double dist = HaversineUtil.distanceKm(
                 -1.2864, 36.8172,   // Nairobi CBD
                 -1.2673, 36.8094);  // Westlands
-        // Assert within ±0.5 km tolerance
-        assertThat(dist).isCloseTo(3.4, within(0.5));
+        assertThat(dist).isCloseTo(2.29, within(0.5));
     }
 
     /** Same point should return 0 */
@@ -43,7 +42,7 @@ class HaversineUtilTest {
         boolean result = HaversineUtil.isWithinRadius(
                 -1.2864, 36.8172,
                 -1.2673, 36.8094,
-                1.0);  // 1 km – Westlands is ~3.4 km away
+                1.0);  // 1 km – Westlands is ~2.3 km away
         assertThat(result).isFalse();
     }
 }

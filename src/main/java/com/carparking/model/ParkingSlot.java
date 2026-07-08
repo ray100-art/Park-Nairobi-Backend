@@ -1,5 +1,6 @@
 package com.carparking.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
@@ -73,6 +74,7 @@ public class ParkingSlot {
     public double getLongitude()                    { return longitude; }
     public int getFloor()                           { return floor; }
     public LocalDateTime getReservationExpiresAt()  { return reservationExpiresAt; }
+    @JsonIgnore
     public String getReservedByDriverId()           { return reservedByDriverId; }
     public double getDistanceKm()                   { return distanceKm; }
 

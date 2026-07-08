@@ -29,22 +29,28 @@ public class ParkingSlotService {
 
     private final SlotRepository    slotRepository;
     private final BookingRepository bookingRepository;
+    private final SlotBroadcaster   slotBroadcaster;
 
     public ParkingSlotService(@Lazy SlotRepository slotRepository,
-                              @Lazy BookingRepository bookingRepository) {
+                              @Lazy BookingRepository bookingRepository,
+                              @Lazy SlotBroadcaster slotBroadcaster) {
         this.slotRepository    = slotRepository;
         this.bookingRepository = bookingRepository;
+        this.slotBroadcaster   = slotBroadcaster;
     }
 
     // ── Register ──────────────────────────────────────────
     public ParkingSlot registerSlot(ParkingSlot slot) {
-        slot.setStatus(SlotStatus.FREE);
-        ParkingSlot existing = slotRegistry.putIfAbsent(slot.getSlotId(), slot);
-        if (existing != null) {
-            log.info("Slot already registered, skipping: " + slot.getSlotId());
+        if (slot.getStatus() == null) {
+            slot.setStatus(SlotStatus.FREE);
+        }
+        if (slotRepository.existsById(slot.getSlotId())) {
+            ParkingSlot existing = slotRepository.findById(slot.getSlotId()).orElseThrow();
+            syncSlot(existing);
             return existing;
         }
-        slotLocks.putIfAbsent(slot.getSlotId(), new ReentrantLock());
+        slotRepository.save(slot);
+        syncSlot(slot);
         log.info("Slot registered: " + slot.getSlotId());
         return slot;
     }
@@ -161,25 +167,21 @@ public class ParkingSlotService {
     @Scheduled(fixedDelay = 60_000)
     public void expireStaleReservations() {
         LocalDateTime now = LocalDateTime.now();
-        List<String> expired = slotRegistry.values().stream()
+        List<ParkingSlot> expired = slotRepository.findAll().stream()
                 .filter(s -> SlotStatus.RESERVED.equals(s.getStatus()))
                 .filter(s -> s.getReservationExpiresAt() != null
                         && s.getReservationExpiresAt().isBefore(now))
-                .map(ParkingSlot::getSlotId)
                 .collect(Collectors.toList());
 
-        expired.forEach(slotId -> {
-            log.warning("Reservation expired for slot: " + slotId);
-            releaseSlot(slotId);
-            // Persist expiry to DB
-            slotRepository.findById(slotId).ifPresent(dbSlot -> {
-                dbSlot.setStatus(SlotStatus.FREE);
-                dbSlot.setReservedByDriverId(null);
-                dbSlot.setReservationExpiresAt(null);
-                slotRepository.save(dbSlot);
-            });
-            // Cancel associated pending booking
-            bookingRepository.findBySlotId(slotId).stream()
+        expired.forEach(dbSlot -> {
+            log.warning("Reservation expired for slot: " + dbSlot.getSlotId());
+            dbSlot.setStatus(SlotStatus.FREE);
+            dbSlot.setReservedByDriverId(null);
+            dbSlot.setReservationExpiresAt(null);
+            slotRepository.save(dbSlot);
+            syncSlot(dbSlot);
+            slotBroadcaster.broadcastSlotUpdate(dbSlot);
+            bookingRepository.findBySlotId(dbSlot.getSlotId()).stream()
                     .filter(b -> "PENDING".equals(b.getStatus()))
                     .forEach(b -> {
                         b.setStatus("CANCELLED");

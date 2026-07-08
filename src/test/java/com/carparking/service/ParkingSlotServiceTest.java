@@ -4,31 +4,36 @@ import com.carparking.model.ParkingSlot;
 import com.carparking.model.SlotStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
 import java.util.NoSuchElementException;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.when;
 
-/**
- * EPIC 01 – Unit tests for ParkingSlotService
- */
+@ExtendWith(MockitoExtension.class)
 class ParkingSlotServiceTest {
+
+    @Mock private SlotRepository     slotRepository;
+    @Mock private BookingRepository  bookingRepository;
 
     private ParkingSlotService service;
 
     @BeforeEach
     void setUp() {
-        service = new ParkingSlotService();
-        // Register two test slots near Nairobi CBD
+        service = new ParkingSlotService(slotRepository, bookingRepository, null);
+        when(slotRepository.existsById(anyString())).thenReturn(false);
+        when(slotRepository.save(any(ParkingSlot.class))).thenAnswer(inv -> inv.getArgument(0));
         service.registerSlot(slot("S-01", -1.2864, 36.8172));
         service.registerSlot(slot("S-02", -1.2865, 36.8173));
-        service.registerSlot(slot("S-03", -1.2900, 36.8200)); // slightly further
+        service.registerSlot(slot("S-03", -1.2900, 36.8200));
     }
-
-    // ------------------------------------------------------------------
-    // Registration
-    // ------------------------------------------------------------------
 
     @Test
     void register_newSlot_statusIsFree() {
@@ -37,15 +42,13 @@ class ParkingSlotServiceTest {
     }
 
     @Test
-    void register_duplicateSlotId_throwsException() {
-        assertThatThrownBy(() -> service.registerSlot(slot("S-01", 0, 0)))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("already registered");
+    void register_duplicateSlotId_returnsExisting() {
+        ParkingSlot existing = service.getSlot("S-01");
+        when(slotRepository.existsById("S-01")).thenReturn(true);
+        when(slotRepository.findById("S-01")).thenReturn(Optional.of(existing));
+        ParkingSlot result = service.registerSlot(slot("S-01", 0, 0));
+        assertThat(result.getSlotId()).isEqualTo("S-01");
     }
-
-    // ------------------------------------------------------------------
-    // Reserve
-    // ------------------------------------------------------------------
 
     @Test
     void reserve_freeSlot_statusBecomesReserved() {
@@ -63,10 +66,6 @@ class ParkingSlotServiceTest {
                 .hasMessageContaining("not FREE");
     }
 
-    // ------------------------------------------------------------------
-    // Occupy
-    // ------------------------------------------------------------------
-
     @Test
     void occupy_reservedSlot_statusBecomesOccupied() {
         service.reserveSlot("S-01", "driver-42");
@@ -83,10 +82,6 @@ class ParkingSlotServiceTest {
                 .hasMessageContaining("does not hold");
     }
 
-    // ------------------------------------------------------------------
-    // Release
-    // ------------------------------------------------------------------
-
     @Test
     void release_occupiedSlot_statusReturnsFree() {
         service.reserveSlot("S-01", "driver-42");
@@ -96,17 +91,11 @@ class ParkingSlotServiceTest {
         assertThat(service.getSlot("S-01").getReservedByDriverId()).isNull();
     }
 
-    // ------------------------------------------------------------------
-    // Find nearest
-    // ------------------------------------------------------------------
-
     @Test
     void findNearest_driverNearCBD_returnsFreeSlots() {
-        // Driver is at Nairobi CBD
         List<ParkingSlot> results = service.findNearestAvailableSlots(-1.2864, 36.8172, 2.0, 10);
         assertThat(results).hasSize(3);
         assertThat(results).allMatch(ParkingSlot::isFree);
-        // First result should be the closest slot (S-01 or S-02)
         assertThat(results.get(0).getDistanceKm()).isLessThan(results.get(1).getDistanceKm());
     }
 
@@ -119,14 +108,9 @@ class ParkingSlotServiceTest {
 
     @Test
     void findNearest_driverFarAway_returnsEmpty() {
-        // Driver is in Mombasa – 400 km away
         List<ParkingSlot> results = service.findNearestAvailableSlots(-4.0435, 39.6682, 2.0, 10);
         assertThat(results).isEmpty();
     }
-
-    // ------------------------------------------------------------------
-    // Admin override
-    // ------------------------------------------------------------------
 
     @Test
     void adminSetStatus_forceOccupied() {
@@ -134,29 +118,17 @@ class ParkingSlotServiceTest {
         assertThat(service.getSlot("S-01").getStatus()).isEqualTo(SlotStatus.OCCUPIED);
     }
 
-    // ------------------------------------------------------------------
-    // Summary
-    // ------------------------------------------------------------------
-
     @Test
     void getStatusSummary_allFree_countsCorrect() {
         var summary = service.getStatusSummary();
         assertThat(summary.get(SlotStatus.FREE)).isEqualTo(3L);
     }
 
-    // ------------------------------------------------------------------
-    // Unknown slot
-    // ------------------------------------------------------------------
-
     @Test
     void getSlot_unknownId_throwsNoSuchElement() {
         assertThatThrownBy(() -> service.getSlot("UNKNOWN"))
                 .isInstanceOf(NoSuchElementException.class);
     }
-
-    // ------------------------------------------------------------------
-    // Helper
-    // ------------------------------------------------------------------
 
     private ParkingSlot slot(String id, double lat, double lon) {
         return ParkingSlot.builder()

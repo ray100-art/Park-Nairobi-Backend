@@ -1,6 +1,7 @@
 package com.carparking.config;
 
 import com.carparking.service.JwtService;
+import com.carparking.service.UserRepository;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -18,10 +19,12 @@ import java.util.List;
 @Component
 public class JwtAuthFilter extends OncePerRequestFilter {
 
-    private final JwtService jwtService;
+    private final JwtService     jwtService;
+    private final UserRepository userRepository;
 
-    public JwtAuthFilter(JwtService jwtService) {
-        this.jwtService = jwtService;
+    public JwtAuthFilter(JwtService jwtService, UserRepository userRepository) {
+        this.jwtService     = jwtService;
+        this.userRepository = userRepository;
     }
 
     @Override
@@ -32,9 +35,8 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 || path.startsWith("/api/auth/")
                 || path.startsWith("/api/slots")
                 || path.startsWith("/api/location")
-                || path.startsWith("/api/sensor")       // ← added
-                || path.startsWith("/api/mpesa/callback") // ← added
-                || path.startsWith("/ws");               // ← added
+                || path.startsWith("/api/mpesa/callback")
+                || path.startsWith("/ws");
     }
 
     @Override
@@ -45,23 +47,23 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
         final String authHeader = request.getHeader("Authorization");
 
-        // No token → pass through; let SecurityConfig rules decide (permitAll vs authenticated)
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            filterChain.doFilter(request, response);  // ← was: 401 + return
+            filterChain.doFilter(request, response);
             return;
         }
 
         try {
-            String jwt   = authHeader.substring(7);
+            String jwt = authHeader.substring(7);
             String email = jwtService.extractUsername(jwt);
-            String role  = jwtService.extractRole(jwt);
 
             if (email != null && SecurityContextHolder.getContext()
                     .getAuthentication() == null) {
-                if (jwtService.isTokenValid(jwt, email)) {
+                var userOpt = userRepository.findByEmail(email);
+                if (userOpt.isPresent() && jwtService.isTokenValid(jwt, userOpt.get())) {
+                    var user = userOpt.get();
                     var auth = new UsernamePasswordAuthenticationToken(
                             email, null,
-                            List.of(new SimpleGrantedAuthority("ROLE_" + role)));
+                            List.of(new SimpleGrantedAuthority("ROLE_" + user.getRole())));
                     auth.setDetails(new WebAuthenticationDetailsSource()
                             .buildDetails(request));
                     SecurityContextHolder.getContext().setAuthentication(auth);

@@ -4,6 +4,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -62,10 +63,33 @@ public class GlobalExceptionHandler {
         ));
     }
 
+    // User not found (invalid JWT subject)
+    @ExceptionHandler(UsernameNotFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleUserNotFound(
+            UsernameNotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of(
+                "success",   false,
+                "status",    401,
+                "message",   "User not found",
+                "timestamp", LocalDateTime.now().toString()
+        ));
+    }
+
     // Illegal arguments (e.g. slot not found)
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String, Object>> handleIllegalArgument(
             IllegalArgumentException ex) {
+        return ResponseEntity.badRequest().body(Map.of(
+                "success",   false,
+                "status",    400,
+                "message",   ex.getMessage(),
+                "timestamp", LocalDateTime.now().toString()
+        ));
+    }
+
+    @ExceptionHandler(IllegalStateException.class)
+    public ResponseEntity<Map<String, Object>> handleIllegalState(
+            IllegalStateException ex) {
         return ResponseEntity.badRequest().body(Map.of(
                 "success",   false,
                 "status",    400,

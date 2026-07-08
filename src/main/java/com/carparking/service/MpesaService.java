@@ -3,6 +3,8 @@ package com.carparking.service;
 import com.carparking.config.MpesaConfig;
 import com.carparking.model.Payment;
 import com.carparking.model.PaymentStatus;
+import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
@@ -13,28 +15,47 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Base64;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.logging.Logger;
+import java.util.logging.Level;
 
 @Service
 public class MpesaService {
+
+    private static final Logger log = Logger.getLogger(MpesaService.class.getName());
 
     private final MpesaConfig       config;
     private final RestTemplate      restTemplate;
     private final PaymentRepository paymentRepository;
     private final BookingRepository bookingRepository;
+    private final PricingService    pricingService;
+
+    @Value("${mpesa.callback.secret:}")
+    private String callbackSecret;
 
     public MpesaService(MpesaConfig config,
                         RestTemplate restTemplate,
                         PaymentRepository paymentRepository,
-                        BookingRepository bookingRepository) {
+                        BookingRepository bookingRepository,
+                        PricingService pricingService) {
         this.config            = config;
         this.restTemplate      = restTemplate;
         this.paymentRepository = paymentRepository;
         this.bookingRepository = bookingRepository;
+        this.pricingService    = pricingService;
     }
 
-    // ── 1. Get OAuth token from Daraja ────────────────────────────────────
+    public boolean isAuthenticCallback(HttpServletRequest request) {
+        if (callbackSecret != null && !callbackSecret.isBlank()) {
+            String provided = request.getHeader("X-Mpesa-Callback-Secret");
+            return callbackSecret.equals(provided);
+        }
+        String ip = request.getRemoteAddr();
+        return ip.startsWith("196.201.") || ip.startsWith("197.248.");
+    }
+
     public String getAccessToken() {
         String credentials = config.consumerKey + ":" + config.consumerSecret;
         String encoded = Base64.getEncoder()
@@ -53,14 +74,13 @@ public class MpesaService {
                 return (String) response.getBody().get("access_token");
             }
         } catch (Exception e) {
-            throw new RuntimeException("Failed to get M-Pesa token: " + e.getMessage());
+            log.log(Level.SEVERE, "M-Pesa token error", e);
+            throw new RuntimeException("Failed to get M-Pesa token");
         }
         throw new RuntimeException("Empty token response from M-Pesa");
     }
 
-    // ── 2. Initiate STK Push ──────────────────────────────────────────────
     public Map<String, Object> stkPush(Long bookingId, String phone, BigDecimal amount) {
-
         String normalised = normalisePhone(phone);
 
         String timestamp = LocalDateTime.now()
@@ -80,7 +100,7 @@ public class MpesaService {
         body.put("Password",          password);
         body.put("Timestamp",         timestamp);
         body.put("TransactionType",   "CustomerPayBillOnline");
-        body.put("Amount",            amount.intValue());   // M-Pesa requires integer
+        body.put("Amount",            amount.intValue());
         body.put("PartyA",            normalised);
         body.put("PartyB",            config.shortcode);
         body.put("PhoneNumber",       normalised);
@@ -108,31 +128,44 @@ public class MpesaService {
                 return Map.of("success", false, "message", "M-Pesa error: " + desc);
             }
         } catch (Exception e) {
-            return Map.of("success", false, "message", "STK Push failed: " + e.getMessage());
+            log.log(Level.SEVERE, "STK push error", e);
+            return Map.of("success", false, "message", "STK Push failed. Please try again.");
         }
     }
 
-    // ── 3. Handle callback from Safaricom ─────────────────────────────────
     public void handleCallback(Map<String, Object> callbackData) {
         try {
             Map<String, Object> body = (Map<String, Object>)
                     ((Map<String, Object>) callbackData.get("Body")).get("stkCallback");
 
             String checkoutId = (String) body.get("CheckoutRequestID");
-            int    resultCode  = (int)   body.get("ResultCode");
+            int resultCode = ((Number) body.get("ResultCode")).intValue();
 
             Optional<Payment> opt = paymentRepository.findByCheckoutRequestId(checkoutId);
             if (opt.isEmpty()) return;
 
             Payment payment = opt.get();
+            if (payment.getStatus() == PaymentStatus.COMPLETED) return;
+            if (payment.getStatus() != PaymentStatus.PENDING) return;
 
             if (resultCode == 0) {
                 Map<String, Object> meta = (Map<String, Object>) body.get("CallbackMetadata");
-                var items = (java.util.List<Map<String, Object>>) meta.get("Item");
+                var items = (List<Map<String, Object>>) meta.get("Item");
 
                 String     mpesaRef  = getMetaValue(items, "MpesaReceiptNumber");
                 BigDecimal paidAmt   = new BigDecimal(String.valueOf(getMetaValue(items, "Amount")));
                 String     phonePaid = getMetaValue(items, "PhoneNumber");
+
+                var booking = bookingRepository.findById(payment.getBookingId()).orElse(null);
+                BigDecimal expected = booking != null
+                        ? pricingService.expectedAmount(booking) : payment.getAmount();
+
+                if (expected != null && paidAmt.compareTo(expected) != 0) {
+                    payment.setStatus(PaymentStatus.FAILED);
+                    payment.setFailureReason("Amount mismatch");
+                    paymentRepository.save(payment);
+                    return;
+                }
 
                 payment.setStatus(PaymentStatus.COMPLETED);
                 payment.setMpesaReceiptNumber(mpesaRef);
@@ -141,11 +174,11 @@ public class MpesaService {
                 payment.setCompletedAt(LocalDateTime.now());
                 paymentRepository.save(payment);
 
-                bookingRepository.findById(payment.getBookingId()).ifPresent(booking -> {
+                if (booking != null) {
                     booking.setStatus("ACTIVE");
                     booking.setPaymentStatus("PAID");
                     bookingRepository.save(booking);
-                });
+                }
 
             } else {
                 payment.setStatus(PaymentStatus.FAILED);
@@ -153,16 +186,20 @@ public class MpesaService {
                 paymentRepository.save(payment);
             }
         } catch (Exception e) {
-            System.err.println("Callback parse error: " + e.getMessage());
+            log.log(Level.SEVERE, "Callback parse error: " + e.getMessage(), e);
         }
     }
 
-    // ── 4. Query payment status (polling) ────────────────────────────────
-    public Map<String, Object> queryStatus(String checkoutId) {
+    public Map<String, Object> queryStatus(String checkoutId, Long userId) {
         Optional<Payment> opt = paymentRepository.findByCheckoutRequestId(checkoutId);
         if (opt.isEmpty()) return Map.of("success", false, "message", "Payment not found");
 
         Payment p = opt.get();
+        var booking = bookingRepository.findById(p.getBookingId()).orElse(null);
+        if (booking == null || !booking.getUserId().equals(userId)) {
+            return Map.of("success", false, "message", "Unauthorized");
+        }
+
         return Map.of(
                 "success",     true,
                 "status",      p.getStatus().name(),
@@ -173,7 +210,6 @@ public class MpesaService {
         );
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────
     private void savePendingPayment(Long bookingId, String checkoutId,
                                     String phone, BigDecimal amount) {
         Payment payment = new Payment();
@@ -194,7 +230,7 @@ public class MpesaService {
         return "254" + phone;
     }
 
-    private String getMetaValue(java.util.List<Map<String, Object>> items, String name) {
+    private String getMetaValue(List<Map<String, Object>> items, String name) {
         return items.stream()
                 .filter(i -> name.equals(i.get("Name")))
                 .map(i -> String.valueOf(i.get("Value")))

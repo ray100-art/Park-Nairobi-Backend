@@ -15,9 +15,10 @@ import java.util.concurrent.ConcurrentHashMap;
 @Component
 public class RateLimitFilter extends OncePerRequestFilter {
 
-    // Max 10 login attempts per minute per IP
-    private static final int    MAX_REQUESTS  = 10;
-    private static final long   WINDOW_MS     = 60_000;
+    private static final int  MAX_AUTH_REQUESTS    = 10;
+    private static final int  MAX_BOOKING_REQUESTS = 20;
+    private static final int  MAX_CALLBACK_REQUESTS = 30;
+    private static final long WINDOW_MS              = 60_000;
 
     private final Map<String, long[]> requestCounts = new ConcurrentHashMap<>();
 
@@ -27,43 +28,42 @@ public class RateLimitFilter extends OncePerRequestFilter {
                                     FilterChain filterChain)
             throws ServletException, IOException {
 
-        // Only rate-limit auth endpoints
         String path = request.getRequestURI();
-        if (!path.startsWith("/api/auth/")) {
+        int limit = resolveLimit(path);
+        if (limit < 0) {
             filterChain.doFilter(request, response);
             return;
         }
 
-        String ip        = getClientIp(request);
-        long   now       = Instant.now().toEpochMilli();
-        long[] data      = requestCounts.computeIfAbsent(ip, k -> new long[]{now, 0});
+        String key = path.split("/")[2] + ":" + request.getRemoteAddr();
+        long now = Instant.now().toEpochMilli();
+        long[] data = requestCounts.computeIfAbsent(key, k -> new long[]{now, 0});
 
-        // Reset window if expired
-        if (now - data[0] > WINDOW_MS) {
-            data[0] = now;
-            data[1] = 0;
-        }
-
-        data[1]++;
-
-        if (data[1] > MAX_REQUESTS) {
-            response.setStatus(429);
-            response.setContentType("application/json");
-            response.getWriter().write(
-                    "{\"success\":false,\"status\":429," +
-                            "\"message\":\"Too many requests. Please wait 1 minute.\"}"
-            );
-            return;
+        synchronized (data) {
+            if (now - data[0] > WINDOW_MS) {
+                data[0] = now;
+                data[1] = 0;
+            }
+            data[1]++;
+            if (data[1] > limit) {
+                response.setStatus(429);
+                response.setContentType("application/json");
+                response.getWriter().write(
+                        "{\"success\":false,\"status\":429," +
+                                "\"message\":\"Too many requests. Please wait 1 minute.\"}"
+                );
+                return;
+            }
         }
 
         filterChain.doFilter(request, response);
     }
 
-    private String getClientIp(HttpServletRequest request) {
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isEmpty()) {
-            return forwarded.split(",")[0].trim();
-        }
-        return request.getRemoteAddr();
+    private int resolveLimit(String path) {
+        if (path.startsWith("/api/auth/")) return MAX_AUTH_REQUESTS;
+        if (path.startsWith("/api/bookings")) return MAX_BOOKING_REQUESTS;
+        if (path.startsWith("/api/mpesa/callback")) return MAX_CALLBACK_REQUESTS;
+        if (path.startsWith("/api/profile/password")) return MAX_AUTH_REQUESTS;
+        return -1;
     }
 }

@@ -14,14 +14,12 @@ public class SlotUpdateMessage {
 
     public SlotUpdateMessage(String slotId, String status,
                              String parkingAreaName,
-                             double latitude, double longitude,
-                             String reservedByDriverId) {
+                             double latitude, double longitude) {
         this.slotId             = slotId;
         this.status             = status;
         this.parkingAreaName    = parkingAreaName;
         this.latitude           = latitude;
         this.longitude          = longitude;
-        this.reservedByDriverId = reservedByDriverId;
         this.timestamp          = java.time.LocalDateTime.now().toString();
     }
 
@@ -30,6 +28,7 @@ public class SlotUpdateMessage {
     public String getParkingAreaName()     { return parkingAreaName; }
     public double getLatitude()            { return latitude; }
     public double getLongitude()           { return longitude; }
+    @com.fasterxml.jackson.annotation.JsonIgnore
     public String getReservedByDriverId()  { return reservedByDriverId; }
     public String getTimestamp()           { return timestamp; }
 

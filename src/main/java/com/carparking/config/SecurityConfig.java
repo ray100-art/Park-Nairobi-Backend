@@ -18,6 +18,7 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -43,9 +44,10 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers("/api/auth/**").permitAll()
+                        .requestMatchers(HttpMethod.PUT, "/api/slots/**").hasRole("ADMIN")
                         .requestMatchers("/api/slots/**").permitAll()
                         .requestMatchers("/api/location/**").permitAll()
-                        .requestMatchers("/api/sensor/**").permitAll()
+                        .requestMatchers("/api/sensor/**").hasRole("ADMIN")
                         .requestMatchers("/ws/**").permitAll()
                         .requestMatchers("/ws/info/**").permitAll()
                         // M-Pesa callback must be public — Safaricom sends no JWT
@@ -67,13 +69,17 @@ public class SecurityConfig {
         String envOrigins = System.getenv("CORS_ALLOWED_ORIGINS");
         List<String> origins = (envOrigins != null && !envOrigins.isBlank())
                 ? Arrays.asList(envOrigins.split(","))
-                : Arrays.asList(
+                : new ArrayList<>(Arrays.asList(
                     "http://localhost:3000",
                     "http://localhost:5500",
                     "http://127.0.0.1:5500",
-                    "http://localhost:8080",
-                    "null"          // file:// origin used when opening HTML files directly
-                  );
+                    "http://localhost:8080"
+                  ));
+
+        String profiles = System.getenv("SPRING_PROFILES_ACTIVE");
+        if (profiles != null && profiles.contains("dev")) {
+            origins.add("null");
+        }
 
         config.setAllowedOrigins(origins);
         config.setAllowedMethods(Arrays.asList(

@@ -1,6 +1,8 @@
 package com.carparking.service;
 
 import com.carparking.model.User;
+import com.carparking.model.dto.UpdateProfileRequest;
+import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -22,7 +24,6 @@ public class ProfileController {
         this.passwordEncoder = passwordEncoder;
     }
 
-    // ── GET /api/profile ──────────────────────────────────────────────────
     @GetMapping
     public ResponseEntity<?> getProfile(
             @AuthenticationPrincipal String email) {
@@ -44,11 +45,10 @@ public class ProfileController {
         ));
     }
 
-    // ── PUT /api/profile ──────────────────────────────────────────────────
     @PutMapping
     public ResponseEntity<?> updateProfile(
             @AuthenticationPrincipal String email,
-            @RequestBody Map<String, String> req) {
+            @Valid @RequestBody UpdateProfileRequest req) {
 
         if (email == null)
             return ResponseEntity.status(401).body(Map.of("message", "Unauthorised"));
@@ -57,15 +57,9 @@ public class ProfileController {
         if (opt.isEmpty())
             return ResponseEntity.status(404).body(Map.of("message", "User not found"));
 
-        User   user  = opt.get();
-        String name  = req.getOrDefault("fullName", "").trim();
-        String phone = req.getOrDefault("phone",    "").trim();
-
-        if (name.isBlank())
-            return ResponseEntity.badRequest().body(Map.of("message", "Full name is required"));
-
-        user.setFullName(name);
-        if (!phone.isBlank()) user.setPhone(phone);
+        User user = opt.get();
+        user.setFullName(req.getFullName().trim());
+        user.setPhone(req.getPhone().trim());
         userRepository.save(user);
 
         return ResponseEntity.ok(Map.of(
@@ -74,12 +68,11 @@ public class ProfileController {
                 "id",       user.getId(),
                 "fullName", user.getFullName(),
                 "email",    user.getEmail(),
-                "phone",    user.getPhone() != null ? user.getPhone() : "",
-                "role",     user.getRole()  != null ? user.getRole()  : "DRIVER"
+                "phone",    user.getPhone(),
+                "role",     user.getRole()
         ));
     }
 
-    // ── PUT /api/profile/password ─────────────────────────────────────────
     @PutMapping("/password")
     public ResponseEntity<?> changePassword(
             @AuthenticationPrincipal String email,
@@ -111,8 +104,11 @@ public class ProfileController {
                     .body(Map.of("message", "Current password is incorrect"));
 
         user.setPasswordHash(passwordEncoder.encode(newPassword));
+        user.setTokenVersion(user.getTokenVersion() + 1);
         userRepository.save(user);
 
-        return ResponseEntity.ok(Map.of("success", true, "message", "Password changed successfully"));
+        return ResponseEntity.ok(Map.of(
+                "success", true,
+                "message", "Password changed successfully. Please sign in again."));
     }
 }

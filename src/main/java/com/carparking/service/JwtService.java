@@ -1,5 +1,6 @@
 package com.carparking.service;
 
+import com.carparking.model.User;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
@@ -23,36 +24,38 @@ public class JwtService {
     @Value("${jwt.expiration}")
     private long jwtExpiration;
 
-    // ── Extract username from token ───────────────────
     public String extractUsername(String token) {
         return extractClaim(token, Claims::getSubject);
     }
 
-    // ── Extract any claim ─────────────────────────────
     public <T> T extractClaim(String token, Function<Claims, T> claimsResolver) {
         final Claims claims = extractAllClaims(token);
         return claimsResolver.apply(claims);
     }
 
-    // ── Generate token for user ───────────────────────
-    public String generateToken(String email, String role) {
+    public String generateToken(User user) {
         Map<String, Object> extraClaims = new HashMap<>();
-        extraClaims.put("role", role);
-        return buildToken(extraClaims, email, jwtExpiration);
+        extraClaims.put("role", user.getRole());
+        extraClaims.put("tv",   user.getTokenVersion());
+        return buildToken(extraClaims, user.getEmail(), jwtExpiration);
     }
 
-    // ── Validate token ────────────────────────────────
-    public boolean isTokenValid(String token, String email) {
-        final String username = extractUsername(token);
-        return (username.equals(email)) && !isTokenExpired(token);
+    public boolean isTokenValid(String token, User user) {
+        return extractUsername(token).equals(user.getEmail())
+                && !isTokenExpired(token)
+                && extractTokenVersion(token) == user.getTokenVersion()
+                && user.isActive();
     }
 
-    // ── Extract role from token ───────────────────────
     public String extractRole(String token) {
         return extractClaim(token, claims -> claims.get("role", String.class));
     }
 
-    // ── Private helpers ───────────────────────────────
+    public int extractTokenVersion(String token) {
+        Object tv = extractClaim(token, claims -> claims.get("tv"));
+        return tv instanceof Number ? ((Number) tv).intValue() : 0;
+    }
+
     private String buildToken(Map<String, Object> extraClaims,
                               String subject, long expiration) {
         return Jwts.builder()

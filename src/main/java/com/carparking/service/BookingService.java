@@ -19,21 +19,23 @@ public class BookingService {
     private static final Logger log =
             Logger.getLogger(BookingService.class.getName());
 
+    private static final int MAX_ACTIVE_BOOKINGS_PER_USER = 3;
+
     private final BookingRepository  bookingRepository;
     private final SlotRepository     slotRepository;
-    private final UserRepository     userRepository;
     private final SlotBroadcaster    slotBroadcaster;
     private final ParkingSlotService parkingSlotService;
+    private final PricingService     pricingService;
 
     public BookingService(BookingRepository bookingRepository,
                           SlotRepository slotRepository,
-                          UserRepository userRepository,
                           SlotBroadcaster slotBroadcaster,
+                          PricingService pricingService,
                           @Lazy ParkingSlotService parkingSlotService) {
         this.bookingRepository  = bookingRepository;
         this.slotRepository     = slotRepository;
-        this.userRepository     = userRepository;
         this.slotBroadcaster    = slotBroadcaster;
+        this.pricingService     = pricingService;
         this.parkingSlotService = parkingSlotService;
     }
 
@@ -42,7 +44,21 @@ public class BookingService {
                                              String vehiclePlate) {
         Map<String, Object> response = new HashMap<>();
         try {
-            ParkingSlot slot = slotRepository.findById(slotId).orElse(null);
+            if (vehiclePlate == null || vehiclePlate.isBlank()) {
+                response.put("success", false);
+                response.put("message", "Vehicle plate is required");
+                return response;
+            }
+
+            long activeBookings = bookingRepository.countByUserIdAndStatusIn(
+                    userId, List.of("PENDING", "ACTIVE"));
+            if (activeBookings >= MAX_ACTIVE_BOOKINGS_PER_USER) {
+                response.put("success", false);
+                response.put("message", "Booking limit reached. Cancel an existing booking first.");
+                return response;
+            }
+
+            ParkingSlot slot = slotRepository.findByIdForUpdate(slotId).orElse(null);
             if (slot == null) {
                 response.put("success", false);
                 response.put("message", "Slot not found");
@@ -54,24 +70,19 @@ public class BookingService {
                 return response;
             }
 
-            // Reserve the slot in DB
             slot.setStatus(SlotStatus.RESERVED);
             slot.setReservedByDriverId(String.valueOf(userId));
             slot.setReservationExpiresAt(LocalDateTime.now().plusMinutes(15));
             slotRepository.save(slot);
-
-            // Keep in-memory map in sync
             parkingSlotService.syncSlot(slot);
 
-            // Create booking record
             Booking booking = new Booking(userId, slotId,
-                    slot.getParkingAreaId(), vehiclePlate,
+                    slot.getParkingAreaId(), vehiclePlate.trim(),
                     LocalDateTime.now().plusMinutes(15));
+            booking.setTotalAmount(pricingService.getParkingFee());
             bookingRepository.save(booking);
 
-            // Broadcast live update
             slotBroadcaster.broadcastSlotUpdate(slot);
-
             log.info("Booking created: user=" + userId + " slot=" + slotId);
 
             response.put("success",   true);
@@ -83,7 +94,7 @@ public class BookingService {
         } catch (Exception e) {
             log.severe("Booking error: " + e.getMessage());
             response.put("success", false);
-            response.put("message", "Error: " + e.getMessage());
+            response.put("message", "Unable to complete booking");
         }
         return response;
     }
@@ -102,17 +113,25 @@ public class BookingService {
                 response.put("message", "Unauthorized");
                 return response;
             }
+            if (!"PENDING".equals(booking.getStatus())) {
+                response.put("success", false);
+                response.put("message", "Only pending bookings can be cancelled");
+                return response;
+            }
 
-            // Free the slot
-            ParkingSlot slot = slotRepository.findById(booking.getSlotId())
-                    .orElse(null);
+            ParkingSlot slot = slotRepository.findById(booking.getSlotId()).orElse(null);
             if (slot != null) {
+                String owner = slot.getReservedByDriverId();
+                if (owner == null || !owner.equals(String.valueOf(userId))) {
+                    response.put("success", false);
+                    response.put("message", "Slot is no longer reserved by you");
+                    return response;
+                }
                 slot.setStatus(SlotStatus.FREE);
                 slot.setReservedByDriverId(null);
                 slot.setReservationExpiresAt(null);
                 slotRepository.save(slot);
-
-                // 📡 Broadcast live update
+                parkingSlotService.syncSlot(slot);
                 slotBroadcaster.broadcastSlotUpdate(slot);
             }
 
@@ -123,17 +142,24 @@ public class BookingService {
             response.put("message", "Booking cancelled");
 
         } catch (Exception e) {
+            log.severe("Cancel booking error: " + e.getMessage());
             response.put("success", false);
-            response.put("message", "Error: " + e.getMessage());
+            response.put("message", "Unable to cancel booking");
         }
         return response;
     }
 
     public List<Booking> getUserBookings(Long userId) {
-        return bookingRepository.findByUserId(userId);
+        return enrichBookings(bookingRepository.findByUserId(userId));
     }
 
     public List<Booking> getAllBookings() {
-        return bookingRepository.findAll();
+        return enrichBookings(bookingRepository.findAll());
+    }
+
+    private List<Booking> enrichBookings(List<Booking> bookings) {
+        bookings.forEach(b -> slotRepository.findById(b.getSlotId())
+                .ifPresent(slot -> b.setParkingAreaName(slot.getParkingAreaName())));
+        return bookings;
     }
 }

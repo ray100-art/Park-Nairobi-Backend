@@ -19,8 +19,8 @@ public class MpesaConfig {
     @Value("${mpesa.shortcode:174379}")
     public String shortcode;           // Sandbox shortcode
 
-    @Value("${mpesa.passkey:bfb279f9aa9bdbcf158e97dd71a467cd2e0c893059b10f78e6b72ada1ed2c919}")
-    public String passkey;             // Sandbox passkey
+    @Value("${mpesa.passkey}")
+    public String passkey;
 
     @Value("${mpesa.callback.url:https://yourdomain.com/api/mpesa/callback}")
     public String callbackUrl;

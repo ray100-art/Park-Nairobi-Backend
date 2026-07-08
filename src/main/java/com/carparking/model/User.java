@@ -1,5 +1,7 @@
 package com.carparking.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
@@ -28,6 +30,9 @@ public class User {
 
     @Column(name = "active")
     private boolean active = true;
+
+    @Column(name = "token_version", nullable = false)
+    private int tokenVersion = 0;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -65,9 +70,11 @@ public class User {
     public String getFullName()          { return fullName; }
     public String getEmail()             { return email; }
     public String getPhone()             { return phone; }
+    @JsonIgnore
     public String getPasswordHash()      { return passwordHash; }
     public String getRole()              { return role; }
     public boolean isActive()            { return active; }
+    public int getTokenVersion()         { return tokenVersion; }
     public LocalDateTime getCreatedAt()  { return createdAt; }
     public LocalDateTime getUpdatedAt()  { return updatedAt; }
 
@@ -79,6 +86,7 @@ public class User {
     public void setPasswordHash(String passwordHash)   { this.passwordHash = passwordHash; }
     public void setRole(String role)                   { this.role = role; }
     public void setActive(boolean active)              { this.active = active; }
+    public void setTokenVersion(int tokenVersion)       { this.tokenVersion = tokenVersion; }
     public void setCreatedAt(LocalDateTime createdAt)  { this.createdAt = createdAt; }
     public void setUpdatedAt(LocalDateTime updatedAt)  { this.updatedAt = updatedAt; }
 }

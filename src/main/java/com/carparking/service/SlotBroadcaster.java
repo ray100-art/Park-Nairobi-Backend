@@ -21,8 +21,7 @@ public class SlotBroadcaster {
                 slot.getStatus().name(),
                 slot.getParkingAreaName(),
                 slot.getLatitude(),
-                slot.getLongitude(),
-                slot.getReservedByDriverId()
+                slot.getLongitude()
         );
         messagingTemplate.convertAndSend("/topic/slots", msg);
     }
