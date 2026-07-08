@@ -88,47 +88,67 @@ docker compose up -d --build    # rebuild after code changes
 
 ---
 
-## Option 2 — Split hosting (Netlify + Railway)
+## Option 2 — Free path: Netlify (frontend) + Railway (backend)
 
-Use this if you don't want to manage a VPS.
+Best free-ish split for this project (no VPS).
 
-### Frontend → Netlify (free)
+| Part | Host | Cost |
+|------|------|------|
+| Frontend | [Netlify](https://www.netlify.com) | Free plan |
+| Backend + MySQL | [Railway](https://railway.app) | Free trial (~$5 credit), then limited free / Hobby |
 
-1. Push `car-parking-ui` to GitHub
-2. Go to [netlify.com](https://netlify.com) → **Add new site** → Import from Git
-3. Build settings: leave blank (static site, no build step)
-4. Publish directory: `/` (root)
-5. Add a redirect/proxy is NOT needed — set the API URL instead
+> Railway is not forever-free for always-on apps. Use the trial to demo; expect ~$5/month Hobby later if you keep it online.
 
-Before each HTML page loads `api.js`, inject your backend URL. Add this to every HTML file's `<head>`:
+### A. Deploy backend first (Railway)
 
-```html
-<script>window.__API_BASE__ = 'https://YOUR-BACKEND-URL';</script>
-<script src="js/config.js"></script>
-```
-
-Or edit `js/config.js` directly with your production API URL.
-
-### Backend → Railway (or Render)
-
-1. Push `car-parking` to GitHub
-2. Go to [railway.app](https://railway.app) → New Project → Deploy from GitHub
-3. Add a **MySQL** plugin and note the connection URL
-4. Set environment variables:
+1. Sign up at [railway.app](https://railway.app) with GitHub.
+2. **New Project** → **Deploy from GitHub repo** → select `Park-Nairobi-Backened`.
+3. Railway should detect the `Dockerfile` and build.
+4. In the same project: **+ New** → **Database** → **MySQL**.
+5. Open the **API service** → **Variables** → add:
 
 | Variable | Value |
 |----------|-------|
-| `DB_URL` | Railway MySQL JDBC URL |
-| `DB_USERNAME` | from Railway |
-| `DB_PASSWORD` | from Railway |
-| `JWT_SECRET` | random 32+ char string |
-| `CORS_ALLOWED_ORIGINS` | `https://your-netlify-site.netlify.app` |
-| `MPESA_CALLBACK_URL` | `https://your-railway-app.up.railway.app/api/mpesa/callback` |
+| `DB_URL` | `jdbc:mysql://${{MySQL.MYSQLHOST}}:${{MySQL.MYSQLPORT}}/${{MySQL.MYSQLDATABASE}}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC` |
+| `DB_USERNAME` | `${{MySQL.MYSQLUSER}}` |
+| `DB_PASSWORD` | `${{MySQL.MYSQLPASSWORD}}` |
+| `JWT_SECRET` | random string, 32+ characters |
 | `SPRING_PROFILES_ACTIVE` | `prod` |
+| `MPESA_CONSUMER_KEY` | from Daraja |
+| `MPESA_CONSUMER_SECRET` | from Daraja |
+| `MPESA_PASSKEY` | sandbox passkey |
+| `CORS_ALLOWED_ORIGINS` | *(set after Netlify — see step C)* |
+| `MPESA_CALLBACK_URL` | *(set after public domain — see step C)* |
 
-5. Railway auto-detects the Dockerfile and deploys on port 8080
+> Variable names for MySQL references may differ slightly in Railway’s UI — use the **Variable Reference** picker from the MySQL service if the names above don’t autocomplete.
 
-> **Note:** WebSockets work on Railway/Render. Make sure the frontend uses `wss://` (automatic when `__API_BASE__` is `https://...`).
+6. **Settings** → **Networking** → **Generate Domain** to get something like `https://xxx.up.railway.app`.
+7. Wait until deploy succeeds. Test: `https://xxx.up.railway.app/api/auth/health`
+
+### B. Deploy frontend (Netlify)
+
+1. Sign up at [netlify.com](https://www.netlify.com) with GitHub.
+2. **Add new site** → **Import an existing project** → `Park-Nairobi-Fronted`.
+3. Build settings (also in `netlify.toml`):
+   - **Build command:** `node build-config.js`
+   - **Publish directory:** `.` (repo root)
+4. Before first deploy, add environment variable:
+   - **Key:** `API_BASE`
+   - **Value:** your Railway URL, e.g. `https://xxx.up.railway.app` *(no trailing slash)*
+5. Deploy. You get a URL like `https://something.netlify.app`.
+
+### C. Connect them (required)
+
+On **Railway** API variables, set:
+
+```text
+CORS_ALLOWED_ORIGINS=https://something.netlify.app
+MPESA_CALLBACK_URL=https://xxx.up.railway.app/api/mpesa/callback
+```
+
+Redeploy the API (or wait for auto-redeploy). Then open the Netlify site and register/login.
+
+> WebSockets: frontend talks to `API_BASE + '/ws'` over HTTPS → SockJS uses secure connections automatically.
 
 ---
 
