@@ -30,8 +30,8 @@ MyProjects/
 **1. Clone both repos on the server**
 
 ```bash
-git clone https://github.com/ray100-art/Park-Nairobi-Backened.git car-parking
-git clone https://github.com/ray100-art/Park-Nairobi-Fronted.git car-parking-ui
+git clone https://github.com/ray100-art/Park-Nairobi-Backend.git car-parking
+git clone https://github.com/ray100-art/Park-Nairobi-Frontend.git car-parking-ui
 ```
 
 **2. Configure environment**
@@ -102,7 +102,7 @@ Best free-ish split for this project (no VPS).
 ### A. Deploy backend first (Railway)
 
 1. Sign up at [railway.app](https://railway.app) with GitHub.
-2. **New Project** → **Deploy from GitHub repo** → select `Park-Nairobi-Backened`.
+2. **New Project** → **Deploy from GitHub repo** → select `Park-Nairobi-Backend`.
 3. Railway should detect the `Dockerfile` and build.
 4. In the same project: **+ New** → **Database** → **MySQL**.
 5. Open the **API service** → **Variables** → add:
@@ -128,7 +128,7 @@ Best free-ish split for this project (no VPS).
 ### B. Deploy frontend (Netlify)
 
 1. Sign up at [netlify.com](https://www.netlify.com) with GitHub.
-2. **Add new site** → **Import an existing project** → `Park-Nairobi-Fronted`.
+2. **Add new site** → **Import an existing project** → `Park-Nairobi-Frontend`.
 3. Build settings (also in `netlify.toml`):
    - **Build command:** `node build-config.js`
    - **Publish directory:** `.` (repo root)
