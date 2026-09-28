@@ -1,6 +1,23 @@
 # ParkNairobi Backend
 
-REST API backend for ParkNairobi — a smart parking system for Nairobi. Features real-time slot availability, GPS-based parking search, M-Pesa payments, and IoT sensor integration.
+REST API behind **ParkNairobi**, a smart-parking platform for Kenyan towns: real-time bay
+availability, GPS-based parking search, bookings, M-Pesa payments and IoT sensor events.
+The web client lives in [Park-Nairobi-Frontend](https://github.com/ray100-art/Park-Nairobi-Frontend)
+([live demo](https://ray100-art.github.io/Park-Nairobi-Frontend/)).
+
+## Highlights
+
+- **Stateless JWT auth with role-based access.** `DRIVER` and `ADMIN` roles are enforced both in
+  the security filter chain and with `@PreAuthorize` on admin operations.
+- **Payments that survive real networks.** M-Pesa STK Push, with a callback that is
+  authenticated (shared secret, or Safaricom IP ranges) and **idempotent**: a payment settles
+  only from `PENDING`, so repeated callbacks cannot double-apply. The paid amount is checked
+  against the booking's expected price.
+- **Live updates.** Slot changes are broadcast over STOMP WebSockets, with JWT checks on the
+  WebSocket channel as well.
+- **Versioned schema.** Flyway migrations (`V1`–`V8`) own the database structure.
+- **Hardening.** Request rate limiting, CORS configuration, and no credentials in code.
+- **Deployable.** Dockerfile and `docker-compose.yml`; see [DEPLOY.md](DEPLOY.md).
 
 ## Tech Stack
 
@@ -80,7 +97,7 @@ The server starts on `http://localhost:8080`. Flyway runs migrations automatical
 | GET | `/` | No | All slots |
 | GET | `/nearby?lat=&lon=&radius=` | No | Slots within radius (km) |
 | GET | `/summary` | No | Count by status (FREE / OCCUPIED / RESERVED) |
-| PUT | `/{slotId}/free` | No | Manually free a slot |
+| PUT | `/{slotId}/free` | Admin | Manually free a slot |
 
 ---
 
@@ -108,7 +125,7 @@ The server starts on `http://localhost:8080`. Flyway runs migrations automatical
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
 | POST | `/pay` | Yes | Initiate STK Push to customer phone |
-| POST | `/callback` | No | Safaricom payment callback (webhook) |
+| POST | `/callback` | Callback secret or Safaricom IP | Safaricom payment callback (webhook) |
 | GET | `/status/{checkoutId}` | Yes | Poll payment status |
 
 **Pay request body:**
@@ -136,9 +153,9 @@ The server starts on `http://localhost:8080`. Flyway runs migrations automatical
 
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
-| POST | `/entry` | No | Car entered bay → marks slot OCCUPIED |
-| POST | `/exit` | No | Car exited bay → marks slot FREE |
-| GET | `/status/{slotId}` | No | Current slot status |
+| POST | `/entry` | Admin | Car entered bay → marks slot OCCUPIED |
+| POST | `/exit` | Admin | Car exited bay → marks slot FREE |
+| GET | `/status/{slotId}` | Admin | Current slot status |
 
 ---
 
@@ -167,7 +184,7 @@ Include the JWT token in every authenticated request:
 Authorization: Bearer <token>
 ```
 
-Tokens expire after 24 hours.
+Tokens expire after 1 hour by default (`JWT_EXPIRATION`, in milliseconds).
 
 ## Real-Time Updates (WebSocket)
 
@@ -206,3 +223,9 @@ src/main/java/com/carparking/
 ```bash
 mvn test
 ```
+
+Unit tests cover the Haversine distance calculations and the parking-slot service.
+
+## License
+
+[MIT](LICENSE)
